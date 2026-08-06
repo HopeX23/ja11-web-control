@@ -44,6 +44,7 @@ const EMPTY_HARDWARE_STATE = Object.freeze({
 });
 
 let device;
+let deviceConnectionActive = false;
 let pendingResponse;
 let state = { masterGain: 0, bands: structuredClone(DEFAULT_BANDS) };
 let originalState = structuredClone(state);
@@ -135,6 +136,14 @@ function isDirty() {
   return canonical(state) !== canonical(originalState);
 }
 
+function isDeviceConnected() {
+  return deviceConnectionActive && Boolean(device?.opened);
+}
+
+function requireDeviceConnection() {
+  if (!isDeviceConnected()) throw new Error("Connect the JA11 first");
+}
+
 function setStatus(message, kind = "") {
   $("#status").textContent = message;
   $("#status").dataset.kind = kind;
@@ -163,16 +172,16 @@ function updateChangeState() {
     $("#commitTitle").textContent = dirty ? "Changes not saved to JA11" : "No unsaved changes";
     $("#commitDetail").textContent = dirty
       ? "Apply for listening, then save when confirmed."
-      : device?.opened ? "The draft matches the last User 1 read." : "Connect and read the JA11 before editing.";
+      : isDeviceConnected() ? "The draft matches the last User 1 read." : "Connect and read the JA11 before editing.";
   }
-  const canSendPeq = Boolean(device?.opened) && !expectedRestart && !invalid;
+  const canSendPeq = isDeviceConnected() && !expectedRestart && !invalid;
   $("#preview").disabled = !canSendPeq;
   $("#save").disabled = !canSendPeq;
   updateHistoryControls();
 }
 
 function renderHardwareState() {
-  const connected = Boolean(device?.opened) && !expectedRestart;
+  const connected = isDeviceConnected() && !expectedRestart;
   const hasVolume = Number.isInteger(hardwareState.deviceVolume);
   const shownVolume = Number.isInteger(volumeDraft) ? volumeDraft : hardwareState.deviceVolume;
   const hasInlineControl = typeof hardwareState.inlineControl === "boolean";
@@ -220,6 +229,7 @@ function showRestartingState() {
 }
 
 function setConnected(connected) {
+  deviceConnectionActive = Boolean(connected);
   for (const button of document.querySelectorAll("[data-needs-device]")) button.disabled = !connected;
   $("#connect").textContent = connected ? "Reconnect" : "Connect JA11";
   $("#connectionBadge").dataset.state = connected ? "connected" : "offline";
@@ -458,6 +468,7 @@ async function connect() {
 
   if (device?.opened) {
     device.removeEventListener("inputreport", onInputReport);
+    setConnected(false);
     await device.close();
   }
   device = selected;
@@ -483,7 +494,7 @@ async function sendAndWait(packet, timeoutMs = 650) {
 }
 
 async function readDevice() {
-  if (!device?.opened) throw new Error("Connect the JA11 first");
+  requireDeviceConnection();
   setStatus("Reading hardware and DSP state…");
   hardwareState = { ...EMPTY_HARDWARE_STATE };
   volumeDraft = null;
@@ -519,7 +530,7 @@ async function readDevice() {
 }
 
 async function writeAndVerify({ writePacket, readPacket, expected, current, label }) {
-  if (!device?.opened) throw new Error("Connect the JA11 first");
+  requireDeviceConnection();
   await device.sendReport(REPORT_ID, writePacket);
   await sleep(DEVICE_COMMAND_INTERVAL);
   if (!await sendAndWait(readPacket)) {
@@ -565,6 +576,7 @@ async function applyDeviceVolume() {
 }
 
 async function applyInlineControl(event) {
+  requireDeviceConnection();
   const target = event.currentTarget.checked;
   event.currentTarget.disabled = true;
   expectedRestart = "headset mic / remote change";
@@ -576,7 +588,7 @@ async function applyInlineControl(event) {
     renderHardwareState();
   } catch (error) {
     expectedRestart = null;
-    setConnected(Boolean(device?.opened));
+    setConnected(deviceConnectionActive && Boolean(device?.opened));
     renderHardwareState();
     throw error;
   }
@@ -598,6 +610,7 @@ async function applyEqPreset() {
 }
 
 async function applyUacMode() {
+  requireDeviceConnection();
   const target = uacDraft;
   if (!Number.isInteger(target) || target === hardwareState.uacMode) return;
   const label = target === 0 ? "UAC 1.0" : "UAC 2.0";
@@ -611,13 +624,14 @@ async function applyUacMode() {
     renderHardwareState();
   } catch (error) {
     expectedRestart = null;
-    setConnected(Boolean(device?.opened));
+    setConnected(deviceConnectionActive && Boolean(device?.opened));
     renderHardwareState();
     throw error;
   }
 }
 
 async function sendSnapshot(snapshot, persist = false) {
+  requireDeviceConnection();
   const valid = validatePeqSnapshot(snapshot);
   await device.sendReport(REPORT_ID, setEqPresetPacket(3));
   await sleep(DEVICE_COMMAND_INTERVAL);
