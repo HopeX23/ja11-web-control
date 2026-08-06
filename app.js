@@ -1,7 +1,7 @@
 import {
   BAND_COUNT,
   EQ_PRESET_NAMES,
-  JA11_FILTER,
+  JA11_FILTERS,
   PEQ_LIMITS,
   REPORT_ID,
   parseInputReport,
@@ -449,8 +449,11 @@ function onInputReport(event) {
 async function connect() {
   if (!("hid" in navigator)) throw new Error("This browser does not expose WebHID. Use Chrome, Edge, or Opera.");
   const authorized = await navigator.hid.getDevices();
-  let selected = authorized.find((item) => item.vendorId === JA11_FILTER.vendorId && item.productId === JA11_FILTER.productId);
-  if (!selected) [selected] = await navigator.hid.requestDevice({ filters: [JA11_FILTER] });
+  const isJa11 = (item) => JA11_FILTERS.some(
+    (filter) => item.vendorId === filter.vendorId && item.productId === filter.productId,
+  );
+  let selected = authorized.find(isJa11);
+  if (!selected) [selected] = await navigator.hid.requestDevice({ filters: JA11_FILTERS });
   if (!selected) return;
 
   if (device?.opened) {

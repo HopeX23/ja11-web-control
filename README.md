@@ -25,7 +25,9 @@ must therefore be approved once again on the GitHub Pages address.
 4. Select **Connect JA11** and approve the browser's device picker.
 
 Changing headset control or UAC mode restarts the dongle, so reconnect after it
-re-enumerates. The User 1 persistent-write command is sent only by **Save to
+re-enumerates. UAC 1.0 uses USB product ID `0101`, while UAC 2.0 uses `0102`, so
+the browser may ask for device permission once in each mode. The User 1
+persistent-write command is sent only by **Save to
 JA11**; **Apply for listening** changes the active sound without committing the
 PEQ memory.
 

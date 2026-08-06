@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  JA11_FILTERS,
   parseInputReport,
   requestBandPacket,
   requestDeviceVolumePacket,
@@ -17,6 +18,13 @@ import {
   setUacModePacket,
   validatePeqSnapshot,
 } from "../protocol.js";
+
+test("matches both JA11 USB audio modes", () => {
+  assert.deepEqual(JA11_FILTERS, [
+    { vendorId: 0x2972, productId: 0x0101 },
+    { vendorId: 0x2972, productId: 0x0102 },
+  ]);
+});
 
 test("encodes JA11 state reads from the official command table", () => {
   assert.deepEqual([...requestDeviceVolumePacket()], [0xbb, 0x0b, 0, 0, 2, 0, 0, 0xee]);

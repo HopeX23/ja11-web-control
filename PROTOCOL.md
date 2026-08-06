@@ -39,6 +39,9 @@ between the displayed draft and the bytes sent to the JA11.
 
 ## Device state and control commands
 
+JA11 re-enumerates as `2972:0101` in UAC 1.0 and `2972:0102` in UAC 2.0.
+Both identities expose the same HID report interface used by this controller.
+
 The current official FiiO Control APK contains both a JA11 device configuration
 and a JA11-specific native packet builder/parser. Together they identify these
 commands:

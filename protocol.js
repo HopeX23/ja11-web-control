@@ -1,7 +1,12 @@
 // FiiO/JadeAudio JA11 WebHID protocol.
 // Based on packet captures documented by fiiocontrol-oss (Unlicense).
 
-export const JA11_FILTER = { vendorId: 0x2972, productId: 0x0102 };
+export const JA11_FILTERS = Object.freeze([
+  Object.freeze({ vendorId: 0x2972, productId: 0x0101 }), // UAC 1.0
+  Object.freeze({ vendorId: 0x2972, productId: 0x0102 }), // UAC 2.0
+]);
+// Kept for consumers that imported the original UAC 2.0-only filter.
+export const JA11_FILTER = JA11_FILTERS[1];
 export const REPORT_ID = 2;
 export const BAND_COUNT = 5;
 export const FILTER_TYPES = Object.freeze({ PK: 0, LSC: 1, HSC: 2 });
