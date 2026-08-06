@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>JA11 Instrument Panel</title>
+  <script>
+    (() => {
+      const saved = localStorage.getItem("ja11-theme");
+      document.documentElement.dataset.theme = saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    })();
+  </script>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="instrument">
+    <header class="instrument-header">
+      <div class="identity">
+        <p class="overline">USB AUDIO / PARAMETRIC EQUALIZER</p>
+        <div class="title-line">
+          <h1>JA11</h1>
+          <span id="connectionBadge" class="connection-badge" data-state="offline">
+            <span class="status-lamp" aria-hidden="true"></span>
+            <span id="connectionText">Offline</span>
+          </span>
+        </div>
+        <dl class="device-meta" aria-label="Device identification">
+          <div><dt>Maker</dt><dd>FiiO / JadeAudio</dd></div>
+          <div><dt>USB</dt><dd>2972:0102</dd></div>
+          <div><dt>HID</dt><dd>Report 02</dd></div>
+        </dl>
+      </div>
+      <div class="header-actions">
+        <button id="themeToggle" class="button quiet" type="button" aria-pressed="false">Night mode</button>
+        <button id="read" class="button quiet" data-needs-device>Read device</button>
+        <button id="connect" class="button connect">Connect JA11</button>
+      </div>
+    </header>
+
+    <div class="system-strip">
+      <span class="strip-label">SYSTEM</span>
+      <output id="status" aria-live="polite">Waiting for device</output>
+      <span id="changeState" class="change-state">Local draft unchanged</span>
+    </div>
+
+    <section class="device-deck" aria-labelledby="hardwareTitle">
+      <header class="device-deck-heading">
+        <p class="section-index">DEVICE / I·O</p>
+        <h2 id="hardwareTitle">Hardware state and routing</h2>
+        <p>Global JA11 controls, separate from the User 1 tuning draft.</p>
+      </header>
+
+      <section class="device-module state-module" aria-label="Read-only device state">
+        <p class="module-label">STATUS</p>
+        <dl class="hardware-readouts">
+          <div><dt>Stream</dt><dd id="sampleRate">—</dd></div>
+          <div><dt>Firmware</dt><dd id="firmwareVersion">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="device-module volume-module">
+        <div class="device-control-heading">
+          <label for="deviceVolume">Output volume</label>
+          <output id="deviceVolumeValue" for="deviceVolume deviceVolumeNumber">— / 60</output>
+        </div>
+        <div class="volume-inputs">
+          <input id="deviceVolume" type="range" min="0" max="60" step="1" value="0" disabled aria-describedby="volumeHelp">
+          <input id="deviceVolumeNumber" type="number" min="0" max="60" step="1" value="0" disabled aria-label="Output volume, 0 to 60">
+        </div>
+        <button id="applyVolume" class="rail-button compact" type="button" disabled>Set output volume</button>
+        <p id="volumeHelp" class="rail-help">Not PEQ preamp. Increases over 10 steps require confirmation.</p>
+      </section>
+
+      <section class="device-module inline-module device-control switch-control">
+        <div>
+          <label for="inlineControl">Headset mic / remote</label>
+          <small>Restarts JA11</small>
+        </div>
+        <label class="switch">
+          <input id="inlineControl" type="checkbox" disabled>
+          <span class="switch-track" aria-hidden="true"><i></i></span>
+          <span id="inlineControlValue" class="switch-value">—</span>
+        </label>
+      </section>
+
+      <section class="device-module uac-module device-control">
+        <label for="uacMode">USB audio mode</label>
+        <select id="uacMode" disabled>
+          <option value="0">UAC 1.0</option>
+          <option value="1">UAC 2.0</option>
+        </select>
+        <button id="applyUac" class="rail-button compact" type="button" disabled>Switch USB mode</button>
+        <p class="rail-help">Restarts JA11. UAC 2.0 is the normal high-resolution mode.</p>
+      </section>
+
+      <section class="device-module program-module program-section" aria-labelledby="programTitle">
+        <p class="module-label">ACTIVE SOUND</p>
+        <div class="program-heading">
+          <label id="programTitle" for="eqPreset">EQ program</label>
+          <output id="activePreset" class="program-badge">—</output>
+        </div>
+        <select id="eqPreset" disabled>
+          <option value="0">Vocal</option>
+          <option value="1">Classic</option>
+          <option value="2">Bass</option>
+          <option value="3">User 1</option>
+          <option value="4">Off</option>
+        </select>
+        <button id="applyPreset" class="rail-button compact" type="button" disabled>Activate program</button>
+        <p class="rail-help">The graph and filter bank edit User 1.</p>
+      </section>
+    </section>
+
+    <section class="workspace">
+      <div class="primary-workspace">
+        <section class="response-section" aria-labelledby="responseTitle">
+          <div class="section-heading">
+            <div>
+              <p class="section-index">01 / RESPONSE</p>
+              <h2 id="responseTitle">Calculated frequency response</h2>
+            </div>
+            <div class="plot-legend" aria-label="Plot legend">
+              <span><i class="legend-line"></i>User 1 draft</span>
+              <span><i class="legend-zero"></i>0 dB reference</span>
+            </div>
+          </div>
+
+          <div class="plot-frame">
+            <svg id="responsePlot" viewBox="0 0 900 380" role="img" aria-labelledby="plotTitle plotDescription">
+              <title id="plotTitle">JA11 equalizer frequency response</title>
+              <desc id="plotDescription">Calculated response from 20 hertz to 20 kilohertz. Drag a numbered control point to change frequency and gain.</desc>
+              <g id="plotGrid"></g>
+              <path id="responsePath" class="response-path" d=""></path>
+              <g id="plotHandles"></g>
+            </svg>
+          </div>
+          <p class="plot-note">Drag a numbered point for broad adjustment. Use the table for exact values. The graph is a calculated preview, not a measurement.</p>
+        </section>
+
+        <section class="bands-section" aria-labelledby="bandsTitle">
+          <div class="section-heading table-heading">
+            <div>
+              <p class="section-index">02 / FILTER BANK</p>
+              <h2 id="bandsTitle">Five-band parametric EQ</h2>
+            </div>
+            <div class="minor-actions">
+              <button id="flat" class="text-button">Set flat</button>
+              <button id="revert" class="text-button">Restore saved User 1</button>
+            </div>
+          </div>
+
+          <div class="table-scroll">
+            <table class="bands-table">
+              <thead>
+                <tr>
+                  <th scope="col">Band</th>
+                  <th scope="col">Filter</th>
+                  <th scope="col">Frequency</th>
+                  <th scope="col">Gain</th>
+                  <th scope="col">Q</th>
+                </tr>
+              </thead>
+              <tbody id="bands"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <aside class="control-rail" aria-label="JA11 controls">
+        <section class="rail-section">
+          <p class="section-index">03 / LEVEL</p>
+          <div class="preamp-readout">
+            <label for="masterGain">Preamp</label>
+            <span><input id="masterGain" type="number" min="-12" max="12" step="0.1" value="0"><b>dB</b></span>
+          </div>
+          <input id="masterGainRange" class="level-range" type="range" min="-12" max="12" step="0.1" value="0" aria-label="Preamp gain">
+          <div class="range-scale"><span>−12</span><span>0</span><span>+12</span></div>
+        </section>
+
+        <section class="rail-section">
+          <p class="section-index">04 / AUDITION</p>
+          <button id="compare" class="rail-button" data-needs-device>Listen to saved User 1</button>
+          <p class="rail-help">A/B the User 1 values last read from the JA11 and this draft. Auditioning activates User 1 but does not write persistent memory.</p>
+        </section>
+
+        <section class="rail-section">
+          <p class="section-index">05 / CONFIGURATION</p>
+          <button id="export" class="rail-button">Export JSON</button>
+          <label class="rail-button file-button">Import JSON<input id="importFile" type="file" accept="application/json,.json"></label>
+        </section>
+
+        <section class="rail-section protocol-note">
+          <p class="section-index">DEVICE LIMITS</p>
+          <dl>
+            <div><dt>Frequency</dt><dd>20–20k Hz</dd></div>
+            <div><dt>Gain</dt><dd>±12 dB</dd></div>
+            <div><dt>Q</dt><dd>0.10–10.00</dd></div>
+            <div><dt>Filters</dt><dd>PK / LS / HS</dd></div>
+          </dl>
+        </section>
+      </aside>
+    </section>
+
+    <footer class="commit-bar">
+      <div class="commit-state">
+        <span class="commit-mark" aria-hidden="true"></span>
+        <div><strong id="commitTitle">No unsaved changes</strong><small id="commitDetail">Read the JA11 before editing.</small></div>
+      </div>
+      <div class="commit-actions">
+        <button id="undo" class="button quiet" disabled>Undo</button>
+        <button id="redo" class="button quiet" disabled>Redo</button>
+        <button id="preview" class="button preview" data-needs-device>Apply for listening</button>
+        <button id="save" class="button save" data-needs-device>Save to JA11</button>
+      </div>
+    </footer>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
