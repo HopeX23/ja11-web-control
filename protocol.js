@@ -25,21 +25,68 @@ export const SAMPLE_RATE_NAMES = Object.freeze([
 ]);
 export const EQ_PRESET_NAMES = Object.freeze(["Vocal", "Classic", "Bass", "User 1", "Off"]);
 export const UAC_MODE_NAMES = Object.freeze(["UAC 1.0", "UAC 2.0"]);
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
+export const PEQ_LIMITS = Object.freeze({
+  masterGain: Object.freeze({ min: -12, max: 12, step: 0.1, decimals: 1 }),
+  freq: Object.freeze({ min: 20, max: 20000, step: 1, decimals: 0 }),
+  gain: Object.freeze({ min: -12, max: 12, step: 0.1, decimals: 1 }),
+  q: Object.freeze({ min: 0.1, max: 10, step: 0.01, decimals: 2 }),
+});
 
 function uint16(value) {
   return value < 0 ? 0x10000 + value : value;
 }
 
 function requireInteger(value, min, max, name) {
-  const number = Number(value);
-  if (!Number.isInteger(number) || number < min || number > max) {
+  if (!Number.isInteger(value) || value < min || value > max) {
     throw new RangeError(`${name} must be an integer from ${min} to ${max}`);
   }
-  return number;
+  return value;
+}
+
+function requirePeqNumber(value, limits, name) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new TypeError(`${name} must be a finite number`);
+  }
+  if (value < limits.min || value > limits.max) {
+    throw new RangeError(`${name} must be from ${limits.min} to ${limits.max}`);
+  }
+
+  const scale = 10 ** limits.decimals;
+  const scaled = value * scale;
+  if (Math.abs(scaled - Math.round(scaled)) > 1e-7) {
+    throw new RangeError(`${name} must use increments of ${limits.step}`);
+  }
+  const normalized = Math.round(scaled) / scale;
+  return Object.is(normalized, -0) ? 0 : normalized;
+}
+
+export function validatePeqBand(band, index) {
+  const name = Number.isInteger(index) ? `Band ${index + 1}` : "Band";
+  if (!band || typeof band !== "object" || Array.isArray(band)) {
+    throw new TypeError(`${name} must be an object`);
+  }
+  if (FILTER_TYPES[band.type] === undefined) {
+    throw new TypeError(`${name} has an unknown filter type: ${String(band.type)}`);
+  }
+  return {
+    type: band.type,
+    gain: requirePeqNumber(band.gain, PEQ_LIMITS.gain, `${name} gain`),
+    freq: requirePeqNumber(band.freq, PEQ_LIMITS.freq, `${name} frequency`),
+    q: requirePeqNumber(band.q, PEQ_LIMITS.q, `${name} Q`),
+  };
+}
+
+export function validatePeqSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    throw new TypeError("Configuration must be an object");
+  }
+  if (!Array.isArray(snapshot.bands) || snapshot.bands.length !== BAND_COUNT) {
+    throw new RangeError(`Configuration must contain exactly ${BAND_COUNT} bands`);
+  }
+  return {
+    masterGain: requirePeqNumber(snapshot.masterGain, PEQ_LIMITS.masterGain, "Preamp gain"),
+    bands: snapshot.bands.map((band, index) => validatePeqBand(band, index)),
+  };
 }
 
 export function requestValuePacket(command) {
@@ -92,7 +139,8 @@ export function setUacModePacket(mode) {
 }
 
 export function setMasterGainPacket(gainDb) {
-  const value = uint16(Math.round(clamp(Number(gainDb), -12, 12) * 2560));
+  const gain = requirePeqNumber(gainDb, PEQ_LIMITS.masterGain, "Preamp gain");
+  const value = uint16(Math.round(gain * 2560));
   return Uint8Array.from([
     0xaa, 0x0a, 0, 0, COMMANDS.MASTER_GAIN, 2,
     value & 0xff, (value >> 8) & 0xff,
@@ -105,11 +153,11 @@ export function setBandPacket(index, band) {
     throw new RangeError(`Band index must be 0-${BAND_COUNT - 1}`);
   }
 
-  const gain = uint16(Math.round(clamp(Number(band.gain), -12, 12) * 10));
-  const frequency = Math.round(clamp(Number(band.freq), 20, 20000));
-  const q = Math.round(clamp(Number(band.q), 0.1, 10) * 100);
-  const filterType = FILTER_TYPES[band.type];
-  if (filterType === undefined) throw new TypeError(`Unknown filter type: ${band.type}`);
+  const valid = validatePeqBand(band, index);
+  const gain = uint16(Math.round(valid.gain * 10));
+  const frequency = valid.freq;
+  const q = Math.round(valid.q * 100);
+  const filterType = FILTER_TYPES[valid.type];
 
   return Uint8Array.from([
     0xaa, 0x0a, 0, 0, COMMANDS.EQ_BAND, 8, index,

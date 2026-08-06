@@ -33,6 +33,10 @@ The implementation deliberately separates applying the live parameters from
 the final commit command, so inspecting and importing configurations cannot
 accidentally write persistent state.
 
+Packet encoders reject non-finite, out-of-range, and unsupported-precision PEQ
+values before any HID write. UI normalization therefore cannot hide a mismatch
+between the displayed draft and the bytes sent to the JA11.
+
 ## Device state and control commands
 
 The current official FiiO Control APK contains both a JA11 device configuration

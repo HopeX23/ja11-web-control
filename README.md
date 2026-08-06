@@ -31,7 +31,7 @@ PEQ memory.
 
 ## Development
 
-Run the nine protocol tests with `npm test`. See [PROTOCOL.md](./PROTOCOL.md)
+Run the protocol tests with `npm test`. See [PROTOCOL.md](./PROTOCOL.md)
 for the wire format and live-verification record.
 
 This project is an independent interoperability tool and is not affiliated

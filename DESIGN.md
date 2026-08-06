@@ -44,6 +44,10 @@ The user must be able to answer five questions without interpretation:
     large increases require a second action. USB-reenumerating settings announce
     the restart. Read-only stream and firmware values cannot be mistaken for
     controls.
+13. **Invalid input never becomes device state.** Temporary typing states are
+    visible and block Apply/Save. Leaving a field restores its previous value
+    when empty or limits a numeric overflow; imported files and protocol writes
+    are rejected rather than silently corrected.
 
 ## Dark mode
 

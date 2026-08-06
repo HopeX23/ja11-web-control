@@ -140,7 +140,11 @@ h1 { margin: 0; font-size: clamp(42px, 5vw, 70px); line-height: .83; letter-spac
 .button:focus-visible, .rail-button:focus-visible, .text-button:focus-visible, input:focus-visible, select:focus-visible, [role="slider"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .button:disabled, .rail-button:disabled, .text-button:disabled { opacity: .36; cursor: not-allowed; }
 .button.connect, .button.save { background: var(--ink); color: var(--paper); }
-.button.connect:hover:not(:disabled), .button.save:hover:not(:disabled) { filter: brightness(1.18); }
+.button.connect:hover:not(:disabled), .button.save:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--paper);
+  filter: brightness(1.18);
+}
 .button.preview { border-color: var(--signal-dark); color: var(--signal-dark); }
 .text-button { min-height: auto; padding: 3px 0; border: 0; border-bottom: 1px solid var(--rule-dark); color: var(--text-button); }
 
@@ -161,6 +165,7 @@ h1 { margin: 0; font-size: clamp(42px, 5vw, 70px); line-height: .83; letter-spac
 #status[data-kind="warning"] { color: #ffc36e; }
 .change-state { color: var(--strip-muted); border-left: 1px solid var(--strip-rule); }
 .change-state[data-dirty="true"] { color: #ffc36e; }
+.change-state[data-invalid="true"] { color: var(--strip-error); }
 
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 268px; }
 .primary-workspace { min-width: 0; border-right: 1px solid var(--frame); }
@@ -210,6 +215,10 @@ h2 { margin: 0; font-size: 18px; line-height: 1.1; letter-spacing: -.02em; font-
   font: 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
   box-shadow: var(--control-shadow);
 }
+.bands-table input[aria-invalid="true"], .preamp-readout input[aria-invalid="true"] {
+  border-color: var(--error);
+  box-shadow: inset 3px 0 0 var(--error), var(--control-shadow);
+}
 
 .device-deck {
   display: grid;
@@ -223,7 +232,6 @@ h2 { margin: 0; font-size: 18px; line-height: 1.1; letter-spacing: -.02em; font-
 .device-deck-heading > p:last-child { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.4; }
 .device-module:last-child { border-right: 0; }
 .module-label { margin: 0 0 10px; color: var(--muted); font: 700 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .11em; }
-.device-deck .device-control { padding-top: 0; }
 .device-deck .device-control + .device-control { margin-top: 0; border-top: 0; }
 .control-rail { background: var(--panel); }
 .rail-section { padding: 22px 20px 24px; border-bottom: 1px solid var(--frame); }
@@ -292,6 +300,7 @@ h2 { margin: 0; font-size: 18px; line-height: 1.1; letter-spacing: -.02em; font-
 .commit-state { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .commit-mark { flex: none; width: 11px; height: 11px; border: 1px solid var(--rule-dark); background: transparent; }
 .commit-state[data-dirty="true"] .commit-mark { background: var(--warn); border-color: var(--warn); }
+.commit-state[data-invalid="true"] .commit-mark { background: var(--error); border-color: var(--error); }
 .commit-state strong, .commit-state small { display: block; }
 .commit-state strong { font-size: 12px; }
 .commit-state small { margin-top: 3px; color: var(--muted); font: 10px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; }

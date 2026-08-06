@@ -2,6 +2,7 @@ import {
   BAND_COUNT,
   EQ_PRESET_NAMES,
   JA11_FILTER,
+  PEQ_LIMITS,
   REPORT_ID,
   parseInputReport,
   requestBandPacket,
@@ -19,6 +20,7 @@ import {
   setInlineControlPacket,
   setMasterGainPacket,
   setUacModePacket,
+  validatePeqSnapshot,
 } from "./protocol.js";
 
 const DEFAULT_BANDS = [
@@ -63,6 +65,46 @@ const $ = (selector) => document.querySelector(selector);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const clone = (value) => structuredClone(value);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const BAND_FIELD_LABELS = Object.freeze({ freq: "frequency", gain: "gain", q: "Q" });
+
+function quantizePeqNumber(value, limits) {
+  const scale = 10 ** limits.decimals;
+  const bounded = clamp(value, limits.min, limits.max);
+  const quantized = Math.round(bounded * scale) / scale;
+  return Object.is(quantized, -0) ? 0 : clamp(quantized, limits.min, limits.max);
+}
+
+function formatPeqNumber(value, limits) {
+  return Number(value).toFixed(limits.decimals);
+}
+
+function hasValidPeqNumber(input) {
+  return input.value !== "" && Number.isFinite(input.valueAsNumber) && input.validity.valid;
+}
+
+function markInputValidity(input, valid) {
+  if (valid) input.removeAttribute("aria-invalid");
+  else input.setAttribute("aria-invalid", "true");
+}
+
+function normalizePeqInput(input, previousValue, limits) {
+  const raw = input.valueAsNumber;
+  if (input.value === "" || !Number.isFinite(raw)) {
+    input.value = formatPeqNumber(previousValue, limits);
+    markInputValidity(input, true);
+    return { value: previousValue, restored: true, adjusted: false };
+  }
+
+  const value = quantizePeqNumber(raw, limits);
+  input.value = formatPeqNumber(value, limits);
+  markInputValidity(input, true);
+  return { value, restored: false, adjusted: Math.abs(value - raw) > 1e-9 };
+}
+
+function hasInvalidPeqInputs() {
+  return [...document.querySelectorAll('#masterGain, #bands input[type="number"]')]
+    .some((input) => !hasValidPeqNumber(input));
+}
 
 function updateThemeControl() {
   const dark = document.documentElement.dataset.theme === "dark";
@@ -105,14 +147,27 @@ function updateHistoryControls() {
 
 function updateChangeState() {
   const dirty = isDirty();
-  $("#changeState").textContent = dirty ? "Unsaved User 1 parameters" : "User 1 and draft aligned";
+  const invalid = hasInvalidPeqInputs();
+  $("#changeState").textContent = invalid
+    ? "Invalid parameter input"
+    : dirty ? "Unsaved User 1 parameters" : "User 1 and draft aligned";
   $("#changeState").dataset.dirty = String(dirty);
+  $("#changeState").dataset.invalid = String(invalid);
   const commit = $(".commit-state");
   commit.dataset.dirty = String(dirty);
-  $("#commitTitle").textContent = dirty ? "Changes not saved to JA11" : "No unsaved changes";
-  $("#commitDetail").textContent = dirty
-    ? "Apply for listening, then save when confirmed."
-    : device?.opened ? "The draft matches the last User 1 read." : "Connect and read the JA11 before editing.";
+  commit.dataset.invalid = String(invalid);
+  if (invalid) {
+    $("#commitTitle").textContent = "Correct the highlighted value";
+    $("#commitDetail").textContent = "Apply and Save remain locked until every parameter is valid.";
+  } else {
+    $("#commitTitle").textContent = dirty ? "Changes not saved to JA11" : "No unsaved changes";
+    $("#commitDetail").textContent = dirty
+      ? "Apply for listening, then save when confirmed."
+      : device?.opened ? "The draft matches the last User 1 read." : "Connect and read the JA11 before editing.";
+  }
+  const canSendPeq = Boolean(device?.opened) && !expectedRestart && !invalid;
+  $("#preview").disabled = !canSendPeq;
+  $("#save").disabled = !canSendPeq;
   updateHistoryControls();
 }
 
@@ -181,9 +236,9 @@ function bandRow(band, index) {
       <td><select data-key="type" aria-label="Band ${index + 1} filter type">
         ${Object.entries(typeLabels).map(([value, label]) => `<option value="${value}" ${band.type === value ? "selected" : ""}>${label}</option>`).join("")}
       </select></td>
-      <td><div class="field-with-unit"><input data-key="freq" aria-label="Band ${index + 1} frequency" type="number" min="20" max="20000" step="1" value="${band.freq}"><span class="unit">Hz</span></div></td>
-      <td><div class="field-with-unit"><input data-key="gain" aria-label="Band ${index + 1} gain" type="number" min="-12" max="12" step="0.1" value="${band.gain}"><span class="unit">dB</span></div></td>
-      <td><input data-key="q" aria-label="Band ${index + 1} Q" type="number" min="0.1" max="10" step="0.01" value="${band.q}"></td>
+      <td><div class="field-with-unit"><input data-key="freq" aria-label="Band ${index + 1} frequency" type="number" min="20" max="20000" step="1" value="${formatPeqNumber(band.freq, PEQ_LIMITS.freq)}" required><span class="unit">Hz</span></div></td>
+      <td><div class="field-with-unit"><input data-key="gain" aria-label="Band ${index + 1} gain" type="number" min="-12" max="12" step="0.1" value="${formatPeqNumber(band.gain, PEQ_LIMITS.gain)}" required><span class="unit">dB</span></div></td>
+      <td><input data-key="q" aria-label="Band ${index + 1} Q" type="number" min="0.1" max="10" step="0.01" value="${formatPeqNumber(band.q, PEQ_LIMITS.q)}" required></td>
     </tr>`;
 }
 
@@ -192,7 +247,8 @@ function renderBands() {
 }
 
 function renderState({ table = true } = {}) {
-  $("#masterGain").value = state.masterGain;
+  $("#masterGain").value = formatPeqNumber(state.masterGain, PEQ_LIMITS.masterGain);
+  markInputValidity($("#masterGain"), true);
   $("#masterGainRange").value = state.masterGain;
   if (table) renderBands();
   drawResponse();
@@ -344,8 +400,12 @@ function drawResponse() {
 function updateBandInputs(index) {
   const row = $(`#bands tr[data-index="${index}"]`);
   if (!row) return;
-  row.querySelector('[data-key="freq"]').value = Math.round(state.bands[index].freq);
-  row.querySelector('[data-key="gain"]').value = Number(state.bands[index].gain).toFixed(1);
+  const frequency = row.querySelector('[data-key="freq"]');
+  const gain = row.querySelector('[data-key="gain"]');
+  frequency.value = formatPeqNumber(state.bands[index].freq, PEQ_LIMITS.freq);
+  gain.value = formatPeqNumber(state.bands[index].gain, PEQ_LIMITS.gain);
+  markInputValidity(frequency, true);
+  markInputValidity(gain, true);
 }
 
 function onInputReport(event) {
@@ -555,16 +615,17 @@ async function applyUacMode() {
 }
 
 async function sendSnapshot(snapshot, persist = false) {
+  const valid = validatePeqSnapshot(snapshot);
   await device.sendReport(REPORT_ID, setEqPresetPacket(3));
   await sleep(DEVICE_COMMAND_INTERVAL);
   hardwareState.eqPreset = 3;
   presetDraft = 3;
   renderHardwareState();
   for (let index = 0; index < BAND_COUNT; index += 1) {
-    await device.sendReport(REPORT_ID, setBandPacket(index, snapshot.bands[index]));
+    await device.sendReport(REPORT_ID, setBandPacket(index, valid.bands[index]));
     await sleep(DEVICE_COMMAND_INTERVAL);
   }
-  await device.sendReport(REPORT_ID, setMasterGainPacket(snapshot.masterGain));
+  await device.sendReport(REPORT_ID, setMasterGainPacket(valid.masterGain));
   if (persist) {
     await sleep(DEVICE_COMMAND_INTERVAL);
     await device.sendReport(REPORT_ID, savePacket());
@@ -636,7 +697,8 @@ function redo() {
 }
 
 function downloadConfig() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const snapshot = validatePeqSnapshot(state);
+  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
   link.download = `ja11-eq-${new Date().toISOString().slice(0, 10)}.json`;
@@ -647,14 +709,17 @@ function downloadConfig() {
 async function importConfig(event) {
   const file = event.target.files[0];
   if (!file) return;
-  const parsed = JSON.parse(await file.text());
-  if (!Array.isArray(parsed.bands) || parsed.bands.length !== BAND_COUNT) throw new Error(`Configuration must contain exactly ${BAND_COUNT} bands`);
-  const previous = clone(state);
-  state = { masterGain: Number(parsed.masterGain), bands: parsed.bands };
-  checkpoint(previous);
-  renderState();
-  setStatus("Configuration imported as a local draft");
-  event.target.value = "";
+  try {
+    const parsed = JSON.parse(await file.text());
+    const next = validatePeqSnapshot(parsed);
+    const previous = clone(state);
+    state = next;
+    checkpoint(previous);
+    renderState();
+    setStatus("Configuration imported as a local draft");
+  } finally {
+    event.target.value = "";
+  }
 }
 
 function guard(action) {
@@ -669,24 +734,84 @@ $("#bands").addEventListener("input", (event) => {
   if (!row || !event.target.dataset.key) return;
   const index = Number(row.dataset.index);
   const key = event.target.dataset.key;
-  beginInputHistory(`band:${index}:${key}`);
-  state.bands[index][key] = key === "type" ? event.target.value : Number(event.target.value);
+  if (key === "type") {
+    beginInputHistory(`band:${index}:${key}`);
+    state.bands[index][key] = event.target.value;
+    drawResponse();
+  } else {
+    const valid = hasValidPeqNumber(event.target);
+    markInputValidity(event.target, valid);
+    if (valid) {
+      beginInputHistory(`band:${index}:${key}`);
+      state.bands[index][key] = quantizePeqNumber(event.target.valueAsNumber, PEQ_LIMITS[key]);
+      drawResponse();
+    }
+  }
+  updateChangeState();
+});
+function commitBandPeqInput(event) {
+  const row = event.target.closest("tr");
+  const key = event.target.dataset.key;
+  if (!row || !key || key === "type") {
+    activeInputKey = undefined;
+    return;
+  }
+
+  const index = Number(row.dataset.index);
+  const previousValue = state.bands[index][key];
+  const result = normalizePeqInput(event.target, previousValue, PEQ_LIMITS[key]);
+  if (result.value !== previousValue) {
+    beginInputHistory(`band:${index}:${key}`);
+    state.bands[index][key] = result.value;
+    drawResponse();
+  }
+  activeInputKey = undefined;
+  updateChangeState();
+
+  const label = `Band ${index + 1} ${BAND_FIELD_LABELS[key]}`;
+  if (result.restored) setStatus(`${label} restored to ${formatPeqNumber(result.value, PEQ_LIMITS[key])}`, "warning");
+  else if (result.adjusted) setStatus(`${label} limited to ${formatPeqNumber(result.value, PEQ_LIMITS[key])}`, "warning");
+}
+$("#bands").addEventListener("change", commitBandPeqInput);
+$("#bands").addEventListener("focusout", commitBandPeqInput);
+
+$("#masterGain").addEventListener("input", (event) => {
+  const valid = hasValidPeqNumber(event.currentTarget);
+  markInputValidity(event.currentTarget, valid);
+  if (valid) {
+    beginInputHistory("preamp");
+    state.masterGain = quantizePeqNumber(event.currentTarget.valueAsNumber, PEQ_LIMITS.masterGain);
+    $("#masterGainRange").value = state.masterGain;
+    drawResponse();
+  }
+  updateChangeState();
+});
+function commitMasterGainInput(event) {
+  const previousValue = state.masterGain;
+  const result = normalizePeqInput(event.currentTarget, previousValue, PEQ_LIMITS.masterGain);
+  if (result.value !== previousValue) {
+    beginInputHistory("preamp");
+    state.masterGain = result.value;
+    $("#masterGainRange").value = result.value;
+    drawResponse();
+  }
+  activeInputKey = undefined;
+  updateChangeState();
+  if (result.restored) setStatus(`Preamp restored to ${formatPeqNumber(result.value, PEQ_LIMITS.masterGain)} dB`, "warning");
+  else if (result.adjusted) setStatus(`Preamp limited to ${formatPeqNumber(result.value, PEQ_LIMITS.masterGain)} dB`, "warning");
+}
+$("#masterGain").addEventListener("change", commitMasterGainInput);
+$("#masterGain").addEventListener("blur", commitMasterGainInput);
+
+$("#masterGainRange").addEventListener("input", (event) => {
+  beginInputHistory("preamp");
+  state.masterGain = quantizePeqNumber(event.currentTarget.valueAsNumber, PEQ_LIMITS.masterGain);
+  $("#masterGain").value = formatPeqNumber(state.masterGain, PEQ_LIMITS.masterGain);
+  markInputValidity($("#masterGain"), true);
   drawResponse();
   updateChangeState();
 });
-$("#bands").addEventListener("change", () => { activeInputKey = undefined; });
-
-for (const selector of ["#masterGain", "#masterGainRange"]) {
-  $(selector).addEventListener("input", (event) => {
-    beginInputHistory("preamp");
-    state.masterGain = Number(event.target.value);
-    $("#masterGain").value = state.masterGain;
-    $("#masterGainRange").value = state.masterGain;
-    drawResponse();
-    updateChangeState();
-  });
-  $(selector).addEventListener("change", () => { activeInputKey = undefined; });
-}
+$("#masterGainRange").addEventListener("change", () => { activeInputKey = undefined; });
 
 $("#responsePlot").addEventListener("pointerdown", (event) => {
   const handle = event.target.closest(".band-handle");
@@ -755,7 +880,7 @@ $("#flat").addEventListener("click", resetFlat);
 $("#revert").addEventListener("click", restoreOriginal);
 $("#undo").addEventListener("click", undo);
 $("#redo").addEventListener("click", redo);
-$("#export").addEventListener("click", downloadConfig);
+$("#export").addEventListener("click", guard(downloadConfig));
 $("#importFile").addEventListener("change", guard(importConfig));
 
 navigator.hid?.addEventListener("disconnect", (event) => {

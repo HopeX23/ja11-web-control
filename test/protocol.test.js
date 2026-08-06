@@ -15,6 +15,7 @@ import {
   setInlineControlPacket,
   setMasterGainPacket,
   setUacModePacket,
+  validatePeqSnapshot,
 } from "../protocol.js";
 
 test("encodes JA11 state reads from the official command table", () => {
@@ -92,9 +93,43 @@ test("accepts a raw HID report with report ID included", () => {
 
 test("rejects unsafe one-byte settings", () => {
   assert.throws(() => setDeviceVolumePacket(61), RangeError);
+  assert.throws(() => setDeviceVolumePacket("37"), RangeError);
   assert.throws(() => setInlineControlPacket(1), TypeError);
   assert.throws(() => setEqPresetPacket(5), RangeError);
   assert.throws(() => setUacModePacket(-1), RangeError);
+});
+
+test("rejects invalid PEQ values instead of silently clamping them", () => {
+  const band = { type: "PK", gain: 0, freq: 1000, q: 0.7 };
+  assert.throws(() => setBandPacket(0, { ...band, q: 999 }), RangeError);
+  assert.throws(() => setBandPacket(0, { ...band, q: "bad" }), TypeError);
+  assert.throws(() => setBandPacket(0, { ...band, q: 0.105 }), RangeError);
+  assert.throws(() => setBandPacket(0, { ...band, freq: 20001 }), RangeError);
+  assert.throws(() => setBandPacket(0, { ...band, freq: 1000.5 }), RangeError);
+  assert.throws(() => setBandPacket(0, { ...band, gain: Number.NaN }), TypeError);
+  assert.throws(() => setBandPacket(0, { ...band, gain: Number.POSITIVE_INFINITY }), TypeError);
+  assert.throws(() => setMasterGainPacket(12.1), RangeError);
+  assert.throws(() => setMasterGainPacket("0"), TypeError);
+});
+
+test("validates and canonicalizes complete PEQ configurations", () => {
+  const snapshot = {
+    masterGain: -1.5,
+    bands: Array.from({ length: 5 }, (_, index) => ({
+      type: index === 0 ? "LSC" : index === 4 ? "HSC" : "PK",
+      gain: index - 2,
+      freq: 100 * (index + 1),
+      q: 0.7,
+    })),
+  };
+  assert.deepEqual(validatePeqSnapshot(snapshot), snapshot);
+  assert.notStrictEqual(validatePeqSnapshot(snapshot), snapshot);
+  assert.throws(() => validatePeqSnapshot({ ...snapshot, masterGain: null }), TypeError);
+  assert.throws(() => validatePeqSnapshot({ ...snapshot, bands: snapshot.bands.slice(1) }), RangeError);
+  assert.throws(() => validatePeqSnapshot({
+    ...snapshot,
+    bands: snapshot.bands.map((band, index) => index === 2 ? { ...band, type: "not-a-filter" } : band),
+  }), TypeError);
 });
 
 test("rejects invalid band index", () => {
