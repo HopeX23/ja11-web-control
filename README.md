@@ -15,6 +15,14 @@ JA11** and approve the browser's device picker.
 WebHID access is granted per website. A JA11 previously approved on localhost
 must therefore be approved once again on the GitHub Pages address.
 
+### Linux WebHID permission
+
+On Linux, grant your user account access to the JA11's `hidraw` device node:
+
+```sh
+printf 'KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2972", ATTRS{idProduct}=="0101", TAG+="uaccess", MODE="0660"\nKERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2972", ATTRS{idProduct}=="0102", TAG+="uaccess", MODE="0660"\n' | sudo tee /etc/udev/rules.d/70-fiio-ja11.rules >/dev/null && sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=hidraw
+```
+
 ## Run
 
 1. Connect a JA11 running firmware 1.9 or newer directly to the Mac.
