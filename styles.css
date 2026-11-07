@@ -241,7 +241,8 @@ h2 { margin: 0; font-size: 18px; line-height: 1.1; letter-spacing: -.02em; font-
   margin: 0 0 4px; border-top: 1px solid var(--frame); border-bottom: 1px solid var(--frame);
 }
 .hardware-readouts div { min-width: 0; padding: 10px 8px 10px 0; }
-.hardware-readouts div + div { padding-left: 10px; border-left: 1px solid var(--rule); }
+.hardware-readouts div:nth-child(even) { padding-left: 10px; border-left: 1px solid var(--rule); }
+.hardware-readouts div:nth-child(n + 3) { grid-column: 1 / -1; border-top: 1px solid var(--rule); }
 .hardware-readouts dt, .hardware-readouts dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hardware-readouts dt { color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .hardware-readouts dd { margin-top: 5px; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }

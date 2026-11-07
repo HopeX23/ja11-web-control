@@ -37,6 +37,7 @@ const DEVICE_COMMAND_INTERVAL = 200;
 const EMPTY_HARDWARE_STATE = Object.freeze({
   deviceVolume: null,
   sampleRate: null,
+  bitRate: null,
   firmwareVersion: null,
   inlineControl: null,
   eqPreset: null,
@@ -45,6 +46,8 @@ const EMPTY_HARDWARE_STATE = Object.freeze({
 
 let device;
 let deviceConnectionActive = false;
+let deviceBusy = false;
+let streamPollTimer;
 let pendingResponse;
 let state = { masterGain: 0, bands: structuredClone(DEFAULT_BANDS) };
 let originalState = structuredClone(state);
@@ -189,6 +192,7 @@ function renderHardwareState() {
   const hasPreset = Number.isInteger(hardwareState.eqPreset);
 
   $("#sampleRate").textContent = hardwareState.sampleRate ?? "—";
+  $("#bitRate").textContent = hardwareState.bitRate ?? "—";
   $("#firmwareVersion").textContent = hardwareState.firmwareVersion ?? "—";
 
   $("#deviceVolumeValue").textContent = Number.isInteger(shownVolume) ? `${shownVolume} / 60` : "— / 60";
@@ -230,6 +234,8 @@ function showRestartingState() {
 
 function setConnected(connected) {
   deviceConnectionActive = Boolean(connected);
+  if (connected) startStreamPolling();
+  else stopStreamPolling();
   for (const button of document.querySelectorAll("[data-needs-device]")) button.disabled = !connected;
   $("#connect").textContent = connected ? "Reconnect" : "Connect JA11";
   $("#connectionBadge").dataset.state = connected ? "connected" : "offline";
@@ -440,6 +446,7 @@ function onInputReport(event) {
     armedVolume = null;
   } else if (message.type === "sampleRate") {
     hardwareState.sampleRate = message.value;
+    if (message.bitRate) hardwareState.bitRate = message.bitRate;
   } else if (message.type === "firmwareVersion") {
     hardwareState.firmwareVersion = message.value;
   } else if (message.type === "inlineControl") {
@@ -493,51 +500,112 @@ async function sendAndWait(packet, timeoutMs = 650) {
   return matched;
 }
 
+async function fetchStreamStatus() {
+  const urls = location.port === "8787"
+    ? ["/api/stream-status"]
+    : ["http://127.0.0.1:8787/api/stream-status", "/api/stream-status"];
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) continue;
+      const data = await response.json();
+      let changed = false;
+      if (data?.sampleRate && data.sampleRate !== hardwareState.sampleRate) {
+        hardwareState.sampleRate = data.sampleRate;
+        changed = true;
+      }
+      if (data?.bitDepth && data.bitDepth !== hardwareState.bitRate) {
+        hardwareState.bitRate = data.bitDepth;
+        changed = true;
+      }
+      if (changed) renderHardwareState();
+      return true;
+    } catch {}
+  }
+  return false;
+}
+
+async function pollStreamStatus() {
+  if (!isDeviceConnected() || expectedRestart || deviceBusy || pendingResponse) return;
+  deviceBusy = true;
+  try {
+    const updatedFromBridge = await fetchStreamStatus();
+    if (!updatedFromBridge) {
+      await sendAndWait(requestSampleRatePacket(), 300);
+    }
+  } catch {} finally {
+    deviceBusy = false;
+  }
+}
+
+function startStreamPolling() {
+  stopStreamPolling();
+  streamPollTimer = setInterval(pollStreamStatus, 500);
+}
+
+function stopStreamPolling() {
+  if (streamPollTimer) {
+    clearInterval(streamPollTimer);
+    streamPollTimer = undefined;
+  }
+}
+
 async function readDevice() {
   requireDeviceConnection();
-  setStatus("Reading hardware and DSP state…");
-  hardwareState = { ...EMPTY_HARDWARE_STATE };
-  volumeDraft = null;
-  uacDraft = null;
-  presetDraft = null;
-  armedVolume = null;
-  renderHardwareState();
+  deviceBusy = true;
+  try {
+    setStatus("Reading hardware and DSP state…");
+    hardwareState = { ...EMPTY_HARDWARE_STATE };
+    volumeDraft = null;
+    uacDraft = null;
+    presetDraft = null;
+    armedVolume = null;
+    renderHardwareState();
 
-  const reads = [
-    [requestUacModePacket(), "UAC mode"],
-    [requestInlineControlPacket(), "headset control"],
-    [requestDeviceVolumePacket(), "device volume"],
-    [requestEqPresetPacket(), "EQ program"],
-    [requestSampleRatePacket(), "sample rate"],
-    [requestFirmwareVersionPacket(), "firmware"],
-    [requestMasterGainPacket(), "PEQ preamp"],
-    ...Array.from({ length: BAND_COUNT }, (_, index) => [requestBandPacket(index), `band ${index + 1}`]),
-  ];
-  const missing = [];
-  for (const [packet, label] of reads) {
-    if (!await sendAndWait(packet)) missing.push(label);
+    const reads = [
+      [requestUacModePacket(), "UAC mode"],
+      [requestInlineControlPacket(), "headset control"],
+      [requestDeviceVolumePacket(), "device volume"],
+      [requestEqPresetPacket(), "EQ program"],
+      [requestSampleRatePacket(), "sample rate"],
+      [requestFirmwareVersionPacket(), "firmware"],
+      [requestMasterGainPacket(), "PEQ preamp"],
+      ...Array.from({ length: BAND_COUNT }, (_, index) => [requestBandPacket(index), `band ${index + 1}`]),
+    ];
+    const missing = [];
+    for (const [packet, label] of reads) {
+      if (!await sendAndWait(packet)) missing.push(label);
+    }
+    await fetchStreamStatus();
+    originalState = clone(state);
+    history = [];
+    future = [];
+    activeInputKey = undefined;
+    comparingOriginal = false;
+    $("#compare").textContent = "Listen to saved User 1";
+    renderState();
+    renderHardwareState();
+    if (missing.length) setStatus(`Partial read; no response for ${missing.join(", ")}`, "warning");
+    else setStatus("Hardware and DSP parameters synchronized", "ok");
+  } finally {
+    deviceBusy = false;
   }
-  originalState = clone(state);
-  history = [];
-  future = [];
-  activeInputKey = undefined;
-  comparingOriginal = false;
-  $("#compare").textContent = "Listen to saved User 1";
-  renderState();
-  renderHardwareState();
-  if (missing.length) setStatus(`Partial read; no response for ${missing.join(", ")}`, "warning");
-  else setStatus("Hardware and DSP parameters synchronized", "ok");
 }
 
 async function writeAndVerify({ writePacket, readPacket, expected, current, label }) {
   requireDeviceConnection();
-  await device.sendReport(REPORT_ID, writePacket);
-  await sleep(DEVICE_COMMAND_INTERVAL);
-  if (!await sendAndWait(readPacket)) {
-    throw new Error(`${label} was sent, but the JA11 did not answer the verification read`);
-  }
-  if (current() !== expected) {
-    throw new Error(`${label} did not verify; the JA11 reported ${String(current())}`);
+  deviceBusy = true;
+  try {
+    await device.sendReport(REPORT_ID, writePacket);
+    await sleep(DEVICE_COMMAND_INTERVAL);
+    if (!await sendAndWait(readPacket)) {
+      throw new Error(`${label} was sent, but the JA11 did not answer the verification read`);
+    }
+    if (current() !== expected) {
+      throw new Error(`${label} did not verify; the JA11 reported ${String(current())}`);
+    }
+  } finally {
+    deviceBusy = false;
   }
 }
 
@@ -632,20 +700,25 @@ async function applyUacMode() {
 
 async function sendSnapshot(snapshot, persist = false) {
   requireDeviceConnection();
-  const valid = validatePeqSnapshot(snapshot);
-  await device.sendReport(REPORT_ID, setEqPresetPacket(3));
-  await sleep(DEVICE_COMMAND_INTERVAL);
-  hardwareState.eqPreset = 3;
-  presetDraft = 3;
-  renderHardwareState();
-  for (let index = 0; index < BAND_COUNT; index += 1) {
-    await device.sendReport(REPORT_ID, setBandPacket(index, valid.bands[index]));
+  deviceBusy = true;
+  try {
+    const valid = validatePeqSnapshot(snapshot);
+    await device.sendReport(REPORT_ID, setEqPresetPacket(3));
     await sleep(DEVICE_COMMAND_INTERVAL);
-  }
-  await device.sendReport(REPORT_ID, setMasterGainPacket(valid.masterGain));
-  if (persist) {
-    await sleep(DEVICE_COMMAND_INTERVAL);
-    await device.sendReport(REPORT_ID, savePacket());
+    hardwareState.eqPreset = 3;
+    presetDraft = 3;
+    renderHardwareState();
+    for (let index = 0; index < BAND_COUNT; index += 1) {
+      await device.sendReport(REPORT_ID, setBandPacket(index, valid.bands[index]));
+      await sleep(DEVICE_COMMAND_INTERVAL);
+    }
+    await device.sendReport(REPORT_ID, setMasterGainPacket(valid.masterGain));
+    if (persist) {
+      await sleep(DEVICE_COMMAND_INTERVAL);
+      await device.sendReport(REPORT_ID, savePacket());
+    }
+  } finally {
+    deviceBusy = false;
   }
 }
 

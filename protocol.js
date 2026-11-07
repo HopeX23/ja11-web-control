@@ -192,7 +192,12 @@ export function parseInputReport(input) {
 
   if (command === COMMANDS.SAMPLE_RATE) {
     const code = data[6];
-    return { type: "sampleRate", code, value: SAMPLE_RATE_NAMES[code] ?? `Code ${code}` };
+    return {
+      type: "sampleRate",
+      code,
+      value: SAMPLE_RATE_NAMES[code] ?? `Code ${code}`,
+      bitRate: code >= 11 && code <= 14 ? "1-bit" : null,
+    };
   }
 
   if (command === COMMANDS.FIRMWARE_VERSION && data.length >= 8) {

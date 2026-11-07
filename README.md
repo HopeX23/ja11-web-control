@@ -8,7 +8,7 @@ and imports/exports User 1 configurations as JSON.
 
 ## Use online
 
-Open **[JA11 Web Control](https://cyfine.github.io/ja11-web-control/)** in a
+Open **[JA11 Web Control](https://hopex23.github.io/ja11-web-control/)** in a
 desktop Chromium browser, connect the dongle directly, then select **Connect
 JA11** and approve the browser's device picker.
 

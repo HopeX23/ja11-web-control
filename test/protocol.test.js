@@ -68,7 +68,7 @@ test("parses JA11 device state responses", () => {
   );
   assert.deepEqual(
     parseInputReport(Uint8Array.from([0xbb, 0x0b, 0, 0, 9, 1, 7, 0, 0xee])),
-    { type: "sampleRate", code: 7, value: "352.8 kHz" },
+    { type: "sampleRate", code: 7, value: "352.8 kHz", bitRate: null },
   );
   assert.deepEqual(
     parseInputReport(Uint8Array.from([0xbb, 0x0b, 0, 0, 11, 2, 2, 20, 0, 0xee])),
